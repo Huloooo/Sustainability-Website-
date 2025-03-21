@@ -1,11 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import FileUpload from './components/FileUpload';
 import DataTable from './components/DataTable';
 import DataChart from './components/DataChart';
 import { useStore } from './store/useStore';
 import { SustainabilityData, TableColumn, SortState } from '@/types';
+import { apiService } from './services/api.service';
 
 export default function Home() {
   const {
@@ -19,13 +20,48 @@ export default function Home() {
     setFilter,
     setSortState,
     isLoading,
+    setLoading,
     error,
+    setError,
   } = useStore();
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    fetchData();
+  }, [currentPage]);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const response = await apiService.getData(currentPage, itemsPerPage);
+      
+      if (response.data && response.data.length > 0) {
+        const columns: TableColumn[] = Object.keys(response.data[0]).map(key => ({
+          key,
+          label: key,
+          sortable: true,
+        }));
+        
+        setData(response.data);
+        setColumns(columns);
+        setFilteredData(response.data);
+        setTotalPages(Math.ceil(response.total / itemsPerPage));
+      }
+    } catch (error) {
+      setError('Error fetching data from server');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDataLoaded = (newData: SustainabilityData[], newColumns: TableColumn[]) => {
     setData(newData);
     setColumns(newColumns);
     setFilteredData(newData);
+    fetchData(); // Refresh the data from the server after upload
   };
 
   const handleSort = (sortState: SortState) => {
@@ -77,7 +113,15 @@ export default function Home() {
 
         <FileUpload onDataLoaded={handleDataLoaded} />
 
-        {data.length > 0 && (
+        {isLoading ? (
+          <div className="flex justify-center items-center mt-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+          </div>
+        ) : error ? (
+          <div className="mt-8 p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded-lg">
+            {error}
+          </div>
+        ) : data.length > 0 ? (
           <div className="mt-8 space-y-8">
             <div className="bg-white dark:bg-dark-card rounded-lg shadow p-6">
               <h2 className="text-xl font-semibold mb-4">Data Preview</h2>
@@ -93,10 +137,31 @@ export default function Home() {
                 />
               </div>
               <DataTable
-                data={filteredData.slice(0, 10)}
+                data={filteredData}
                 columns={columns}
                 onSort={handleSort}
               />
+              
+              {/* Pagination */}
+              <div className="mt-4 flex justify-center space-x-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 border rounded-md disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="px-4 py-2">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 border rounded-md disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
 
             <div className="bg-white dark:bg-dark-card rounded-lg shadow p-6">
@@ -105,6 +170,10 @@ export default function Home() {
                 <DataChart data={filteredData} columns={columns.map((col: TableColumn) => col.key)} />
               </div>
             </div>
+          </div>
+        ) : (
+          <div className="mt-8 text-center text-gray-500 dark:text-gray-400">
+            No data available. Please upload a CSV file to get started.
           </div>
         )}
       </div>

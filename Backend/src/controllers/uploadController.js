@@ -1,34 +1,67 @@
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse');
 const logger = require('../config/logger');
 const pool = require('../config/database');
 const Queue = require('bull');
+const { addData } = require('./dataController');
 
 // Create a Bull queue for processing CSV files
 const processQueue = new Queue('csvProcessing');
 
-const uploadController = async (req, res) => {
+const handleFileUpload = async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
-        
-        res.json({
-            status: 'success',
-            filename: req.file.filename,
-            message: 'File uploaded successfully'
+
+        const results = [];
+        const parser = parse({
+            columns: true,
+            skip_empty_lines: true
         });
+
+        parser.on('readable', function() {
+            let record;
+            while (record = parser.read()) {
+                results.push(record);
+            }
+        });
+
+        parser.on('error', function(err) {
+            console.error('Error parsing CSV:', err);
+            res.status(500).json({ error: 'Error processing file' });
+        });
+
+        parser.on('end', function() {
+            // Add parsed data to in-memory storage
+            addData(results);
+            
+            // Clean up the uploaded file
+            fs.unlink(req.file.path, (err) => {
+                if (err) {
+                    console.error('Error deleting file:', err);
+                }
+            });
+
+            res.json({
+                message: 'File processed successfully',
+                recordsProcessed: results.length
+            });
+        });
+
+        // Read the file and pipe it to the parser
+        fs.createReadStream(req.file.path).pipe(parser);
     } catch (error) {
-        logger.error('Error in file upload:', error);
-        res.status(500).json({ error: 'File upload failed' });
+        console.error('Error in file upload:', error);
+        res.status(500).json({ error: 'Error uploading file' });
     }
 };
 
 const previewController = async (req, res) => {
     try {
         const filePath = path.join(process.env.UPLOAD_DIR || './uploads', req.params.filename);
-        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const fileContent = await fs.promises.readFile(filePath, 'utf-8');
         
         const records = [];
         const parser = parse(fileContent, {
@@ -85,7 +118,7 @@ processQueue.process(async (job) => {
     const { filePath, mapping, mappingId } = job.data;
     
     try {
-        const fileContent = await fs.readFile(filePath, 'utf-8');
+        const fileContent = await fs.promises.readFile(filePath, 'utf-8');
         const records = [];
         
         const parser = parse(fileContent, {
@@ -125,7 +158,7 @@ processQueue.process(async (job) => {
 });
 
 module.exports = {
-    uploadController,
+    handleFileUpload,
     processController,
     previewController
 }; 

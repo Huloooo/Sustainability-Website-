@@ -5,6 +5,7 @@ export interface SustainabilityData {
 export interface TableColumn {
   key: string;
   label: string;
+  sortable?: boolean;
 }
 
 export interface SortState {
@@ -32,4 +33,11 @@ export interface FileUploadState {
   error: string | null;
   data: SustainabilityData[] | null;
   columns: TableColumn[] | null;
+}
+
+export interface ApiResponse {
+  data: SustainabilityData[];
+  total: number;
+  page: number;
+  limit: number;
 } 

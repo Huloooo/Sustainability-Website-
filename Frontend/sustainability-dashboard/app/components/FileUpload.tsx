@@ -5,6 +5,7 @@ import { useDropzone } from 'react-dropzone';
 import Papa from 'papaparse';
 import { FileUploadState, SustainabilityData, TableColumn } from '@/types';
 import { useStore } from '../store/useStore';
+import { apiService } from '../services/api.service';
 
 interface FileUploadProps {
   onDataLoaded: (data: SustainabilityData[], columns: TableColumn[]) => void;
@@ -13,54 +14,63 @@ interface FileUploadProps {
 export default function FileUpload({ onDataLoaded }: FileUploadProps) {
   const { isDarkMode, setLoading, setError, isLoading, error } = useStore();
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
     setLoading(true);
     setError(null);
 
-    Papa.parse(file, {
-      complete: (results) => {
-        const { data, errors } = results;
-        
-        if (errors.length > 0) {
-          setLoading(false);
-          setError('Error parsing CSV file');
-          return;
-        }
+    try {
+      // First upload the file to the server
+      const uploadResult = await apiService.uploadFile(file);
+      
+      // Then parse the file locally to display the preview
+      Papa.parse(file, {
+        complete: (results) => {
+          const { data, errors } = results;
+          
+          if (errors.length > 0) {
+            setLoading(false);
+            setError('Error parsing CSV file');
+            return;
+          }
 
-        if (data.length < 2) {
-          setLoading(false);
-          setError('File is empty or invalid');
-          return;
-        }
+          if (data.length < 2) {
+            setLoading(false);
+            setError('File is empty or invalid');
+            return;
+          }
 
-        const headers = data[0] as string[];
-        const columns: TableColumn[] = headers.map(header => ({
-          key: header,
-          label: header,
-          sortable: true,
-        }));
+          const headers = data[0] as string[];
+          const columns: TableColumn[] = headers.map(header => ({
+            key: header,
+            label: header,
+            sortable: true,
+          }));
 
-        const parsedData: SustainabilityData[] = data.slice(1).map((row: any) => {
-          const item: SustainabilityData = {};
-          headers.forEach((header, index) => {
-            item[header] = row[index];
+          const parsedData: SustainabilityData[] = data.slice(1).map((row: any) => {
+            const item: SustainabilityData = {};
+            headers.forEach((header, index) => {
+              item[header] = row[index];
+            });
+            return item;
           });
-          return item;
-        });
 
-        setLoading(false);
-        onDataLoaded(parsedData, columns);
-      },
-      error: (error) => {
-        setLoading(false);
-        setError('Error reading file');
-      },
-      header: false,
-      skipEmptyLines: true,
-    });
+          setLoading(false);
+          onDataLoaded(parsedData, columns);
+        },
+        error: (error) => {
+          setLoading(false);
+          setError('Error reading file');
+        },
+        header: false,
+        skipEmptyLines: true,
+      });
+    } catch (error) {
+      setLoading(false);
+      setError('Error uploading file to server');
+    }
   }, [onDataLoaded, setLoading, setError]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
